@@ -38,12 +38,10 @@ def test_valid_rsvp_appends_one_row() -> None:
     assert response.status_code == 200
     assert response.json()["ok"] is True
     assert len(repository.rows) == 1
-    assert repository.rows[0][2:9] == [
+    assert repository.rows[0][2:7] == [
         "Asha Perera",
-        "+94771234567",
         "Yes",
         2,
-        "Bride",
         "Vegetarian meal, please.",
         "website",
     ]

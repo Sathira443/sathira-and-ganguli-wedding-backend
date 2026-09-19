@@ -12,10 +12,8 @@ SHEET_HEADERS = [
     "record_id",
     "received_at",
     "name",
-    "phone",
     "attendance",
     "guest_count",
-    "guest_side",
     "message",
     "source",
 ]

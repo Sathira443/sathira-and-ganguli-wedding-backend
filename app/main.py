@@ -91,10 +91,8 @@ def create_rsvp(
         record_id,
         received_at,
         payload.name,
-        payload.phone,
         payload.attendance,
         payload.guest_count,
-        payload.guest_side,
         payload.message,
         "website",
     ]
