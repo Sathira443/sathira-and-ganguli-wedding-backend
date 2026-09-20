@@ -52,8 +52,7 @@ The API is available at `POST http://localhost:8000/api/rsvps` and health is ava
 
 - `record_id`, `received_at`, and `source` are generated server-side.
 - `attendance` must be `Yes` or `No`; declining guests must use `guest_count: 0`.
-- `phone` is required and normalized for request validation, but is not stored because the worksheet has no phone column.
-- `guest_side` may be accepted from older clients, but is not stored because the worksheet has no guest-side column.
+- `phone` and `guest_side` are not part of the RSVP request because they are not stored in the worksheet.
 - `website` is an optional honeypot field and must remain empty for real guests.
 - A client retry creates a new append. The frontend should disable submission while a request is in progress and generate a `request_id` for tracing; the fixed worksheet schema does not store that ID.
 - `PUT`, `PATCH`, and `DELETE` routes do not exist.

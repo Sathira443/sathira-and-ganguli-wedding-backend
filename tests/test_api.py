@@ -27,10 +27,8 @@ def test_valid_rsvp_appends_one_row() -> None:
         json={
             "request_id": "request-1",
             "name": "Asha Perera",
-            "phone": "+94 (77) 123-4567",
             "attendance": "Yes",
             "guest_count": 2,
-            "guest_side": "Bride",
             "message": "Vegetarian meal, please.",
         },
     )
