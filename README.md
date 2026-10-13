@@ -80,3 +80,17 @@ HTTP 200
 This creates a test row in `Sheet1`; remove test rows manually before production.
 
 For production, run behind HTTPS and configure `CORS_ORIGINS` with only the wedding site's origin.
+
+For the Vercel deployment, add an environment variable named `CORS_ORIGINS`
+with the exact origin of the deployed frontend, for example:
+
+```text
+["https://your-wedding-site.vercel.app"]
+```
+
+Do not include a trailing slash or the `/api` path. Redeploy the backend after
+changing the variable. The browser sends an `OPTIONS` preflight before the RSVP
+`POST`; without this origin in `CORS_ORIGINS`, the preflight is rejected and
+the frontend reports `Failed to fetch`, even though a direct `curl` request
+works. The application also removes accidental trailing slashes when loading
+this setting.
