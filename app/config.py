@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     ])
     max_guest_count: int = Field(default=10, ge=1, le=100)
     rsvp_deadline: str | None = None
+    invitation_cache_control: str = "no-store"
     spreadsheet_id: str | None = None
     worksheet_name: str = "RSVP"
     google_service_account_json: str | None = None
