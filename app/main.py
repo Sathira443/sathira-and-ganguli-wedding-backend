@@ -1,14 +1,19 @@
 from datetime import datetime, timezone
-import secrets
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, Response
 
 from app.config import Settings, get_settings
-from app.schemas import ErrorResponse, RSVPRequest, RSVPResponse
-from app.services.sheets import AppendRepository, GoogleSheetsRepository
+from app.schemas import (
+    ErrorResponse,
+    InvitationResponse,
+    RSVPRequest,
+    RSVPResponse,
+    validate_record_id,
+)
+from app.services.sheets import GoogleSheetsRepository, InvitationRepository
 
 
 app = FastAPI(title="Wedding RSVP API", version="1.0.0")
@@ -28,7 +33,7 @@ def configure_cors(settings: Settings) -> None:
 configure_cors(get_settings())
 
 
-def get_repository(settings: Settings = Depends(get_settings)) -> AppendRepository:
+def get_repository(settings: Settings = Depends(get_settings)) -> InvitationRepository:
     try:
         return GoogleSheetsRepository(settings)
     except Exception as exc:
@@ -36,11 +41,6 @@ def get_repository(settings: Settings = Depends(get_settings)) -> AppendReposito
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={"code": "STORAGE_UNAVAILABLE", "message": "RSVP storage is not available."},
         ) from exc
-
-
-def make_record_id() -> str:
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    return f"{timestamp}-{secrets.token_urlsafe(6)}"
 
 
 def check_deadline(settings: Settings) -> None:
@@ -54,15 +54,63 @@ def check_deadline(settings: Settings) -> None:
         )
 
 
+def invalid_invitation() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail={
+            "code": "INVALID_INVITATION_LINK",
+            "message": "This invitation link is invalid. Please open the link sent by the bride or groom.",
+        },
+    )
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get(
+    "/api/invitations/{record_id}",
+    response_model=InvitationResponse,
+    responses={404: {"model": ErrorResponse}, 503: {"model": ErrorResponse}},
+)
+def get_invitation(
+    record_id: str,
+    response: Response,
+    settings: Settings = Depends(get_settings),
+    repository: InvitationRepository = Depends(get_repository),
+) -> InvitationResponse:
+    response.headers["Cache-Control"] = settings.invitation_cache_control
+    try:
+        normalized_id = validate_record_id(record_id)
+        invitation = repository.get_public_by_record_id(normalized_id)
+    except ValueError:
+        raise invalid_invitation()
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "STORAGE_ERROR", "message": "The invitation could not be loaded. Please try again."},
+        ) from exc
+    if invitation is None:
+        raise invalid_invitation()
+    return InvitationResponse(
+        invitation={
+            "record_id": invitation.record_id,
+            "name": invitation.name,
+            "attendance": invitation.attendance,
+            "guest_count": invitation.guest_count,
+            "message": invitation.message,
+        }
+    )
 
 
 @app.post(
     "/api/rsvps",
     response_model=RSVPResponse,
     responses={
+        404: {"model": ErrorResponse},
         409: {"model": ErrorResponse},
         422: {"model": ErrorResponse},
         503: {"model": ErrorResponse},
@@ -71,7 +119,7 @@ def health() -> dict[str, str]:
 def create_rsvp(
     payload: RSVPRequest,
     settings: Settings = Depends(get_settings),
-    repository: AppendRepository = Depends(get_repository),
+    repository: InvitationRepository = Depends(get_repository),
 ) -> RSVPResponse:
     check_deadline(settings)
     if payload.website:
@@ -85,25 +133,26 @@ def create_rsvp(
             detail={"code": "VALIDATION_ERROR", "message": "Guest count exceeds the allowed maximum."},
         )
 
-    record_id = make_record_id()
-    received_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-    row = [
-        record_id,
-        received_at,
-        payload.name,
-        payload.attendance,
-        payload.guest_count,
-        payload.message,
-        "website",
-    ]
     try:
-        repository.append(row)
+        invitation = repository.get_public_by_record_id(payload.record_id)
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={"code": "STORAGE_ERROR", "message": "The RSVP could not be saved. Please try again."},
         ) from exc
-    return RSVPResponse(record_id=record_id)
+    if invitation is None:
+        raise invalid_invitation()
+
+    received_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    values = [received_at, payload.attendance, payload.guest_count, payload.message, "website"]
+    try:
+        repository.update_rsvp(invitation.row_number, values)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "STORAGE_ERROR", "message": "The RSVP could not be saved. Please try again."},
+        ) from exc
+    return RSVPResponse(record_id=invitation.record_id)
 
 
 @app.exception_handler(HTTPException)

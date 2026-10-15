@@ -1,6 +1,6 @@
 # Wedding RSVP API
 
-FastAPI backend that validates RSVP submissions and appends one row to the private Google Sheet. The browser never receives Google credentials or spreadsheet access.
+FastAPI backend that resolves private invitation links and updates the matching RSVP row in the private Google Sheet. The browser never receives Google credentials or spreadsheet access.
 
 ## Spreadsheet contract
 
@@ -10,7 +10,7 @@ The configured worksheet must have this header order:
 record_id, received_at, name, attendance, guest_count, message, source
 ```
 
-The current worksheet tab is `Sheet1`. Share the spreadsheet with the Google service-account email as an Editor. The service only calls `append_row`; it does not update or delete existing rows.
+The current worksheet tab is `RSVP`. Share the spreadsheet with the Google service-account email as an Editor. The service reads the worksheet to resolve `record_id` and updates only columns `received_at` through `source` for the matching row.
 
 ## Google Cloud setup
 
@@ -46,15 +46,17 @@ GOOGLE_SERVICE_ACCOUNT_FILE=C:/path/to/service-account-key.json
 
 Keep the credential outside source control. The service-account email must have Editor access to the spreadsheet.
 
-The API is available at `POST http://localhost:8000/api/rsvps` and health is available at `GET http://localhost:8000/health`.
+The API is available at `GET http://localhost:8000/api/invitations/{record_id}` and `POST http://localhost:8000/api/rsvps`; health is available at `GET http://localhost:8000/health`.
 
 ## API behavior
 
-- `record_id`, `received_at`, and `source` are generated server-side.
+- `record_id` must identify a pre-populated invitation row. The server preserves that row's `record_id` and `name`.
+- `GET /api/invitations/{record_id}` returns the public `record_id`, `name`, `attendance`, `guest_count`, and `message` fields so the RSVP form can be edited later. It never returns `source` or other storage credentials/details. Unknown IDs and rows with blank names return `INVALID_INVITATION_LINK`.
+- `POST /api/rsvps` updates the matching row; repeated valid submissions overwrite that row with the latest response and never append a second row.
 - `attendance` must be `Yes` or `No`; declining guests must use `guest_count: 0`.
 - `phone` and `guest_side` are not part of the RSVP request because they are not stored in the worksheet.
 - `website` is an optional honeypot field and must remain empty for real guests.
-- A client retry creates a new append. The frontend should disable submission while a request is in progress and generate a `request_id` for tracing; the fixed worksheet schema does not store that ID.
+- The optional `request_id` is accepted for client tracing but is not stored in the fixed worksheet schema.
 - `PUT`, `PATCH`, and `DELETE` routes do not exist.
 - Set `RSVP_DEADLINE` to an ISO 8601 UTC timestamp to close submissions.
 
@@ -64,20 +66,27 @@ The API is available at `POST http://localhost:8000/api/rsvps` and health is ava
 pytest
 ```
 
-With the API running on port 8000, test a real append from PowerShell:
+With the API running on port 8000, test a real invitation lookup and RSVP update from PowerShell. Replace
+`yutre7i` with a populated `record_id` from the worksheet:
 
 ```powershell
-Push-Location 'D:\Codes\sathira-and-ganguli-wedding-backend'; py -c "import httpx; payload={'name':'Column Order Test','phone':'0771234567','attendance':'Yes','guest_count':1,'message':'Seven column test'}; response=httpx.post('http://127.0.0.1:8000/api/rsvps', json=payload); print(f'HTTP {response.status_code}'); print(response.text)"; Pop-Location
+curl.exe -i http://127.0.0.1:8000/api/invitations/yutre7i
+curl.exe -i -X POST http://127.0.0.1:8000/api/rsvps `
+  -H "Content-Type: application/json" `
+  --data-raw '{"request_id":"curl-test-1","record_id":"yutre7i","attendance":"Yes","guest_count":1,"message":"Looking forward to celebrating with you."}'
 ```
 
 Expected response:
 
 ```text
-HTTP 200
-{"ok":true,"record_id":"generated-id"}
+HTTP/1.1 200 OK
+{"ok":true,"invitation":{"record_id":"yutre7i","name":"Yutre","attendance":"Yes","guest_count":1,"message":"Looking forward to celebrating with you."}}
+
+HTTP/1.1 200 OK
+{"ok":true,"record_id":"yutre7i"}
 ```
 
-This creates a test row in `Sheet1`; remove test rows manually before production.
+This updates the matching RSVP row. Repeat the POST to verify that the same row is overwritten rather than a second row being appended.
 
 For production, run behind HTTPS and configure `CORS_ORIGINS` with only the wedding site's origin.
 
