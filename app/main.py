@@ -47,6 +47,8 @@ def check_deadline(settings: Settings) -> None:
     if not settings.rsvp_deadline:
         return
     deadline = datetime.fromisoformat(settings.rsvp_deadline.replace("Z", "+00:00"))
+    if deadline.tzinfo is None:
+        deadline = deadline.replace(tzinfo=timezone.utc)
     if datetime.now(timezone.utc) >= deadline.astimezone(timezone.utc):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

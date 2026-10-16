@@ -58,7 +58,11 @@ The API is available at `GET http://localhost:8000/api/invitations/{record_id}` 
 - `website` is an optional honeypot field and must remain empty for real guests.
 - The optional `request_id` is accepted for client tracing but is not stored in the fixed worksheet schema.
 - `PUT`, `PATCH`, and `DELETE` routes do not exist.
-- Set `RSVP_DEADLINE` to an ISO 8601 UTC timestamp to close submissions.
+- Set `RSVP_DEADLINE` to an ISO 8601 timestamp to close both new RSVPs and edits.
+  The API rejects submissions at or after this time with `RSVP_CLOSED`. Include
+  a timezone, for example `2026-11-15T23:59:59+05:30` or
+  `2026-11-15T18:00:00Z`. A date-only value such as `2026-11-15` is treated
+  as midnight UTC.
 
 ## Test
 

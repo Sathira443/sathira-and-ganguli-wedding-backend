@@ -116,6 +116,21 @@ def test_valid_rsvp_updates_matching_row_without_changing_identity() -> None:
     assert repository.rows["yutre7i"].name == "Yutre"
 
 
+def test_rsvp_deadline_closes_new_and_existing_submissions(monkeypatch) -> None:
+    monkeypatch.setenv("RSVP_DEADLINE", "2000-01-01T00:00:00Z")
+    get_settings.cache_clear()
+
+    response = client.post("/api/rsvps", json=valid_rsvp())
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "ok": False,
+        "code": "RSVP_CLOSED",
+        "message": "RSVP submissions are closed.",
+    }
+    assert repository.updates == []
+
+
 def test_repeated_valid_rsvp_updates_same_row() -> None:
     first = client.post("/api/rsvps", json=valid_rsvp())
     second = client.post(
